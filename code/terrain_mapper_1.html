@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain Guard - 3D Viewer</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #1e1e1e; color: white; }
+        #ui-container {
+            position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.8);
+            padding: 20px; border-radius: 8px; z-index: 10; box-shadow: 0 4px 6px rgba(0,0,0,0.5); width: 280px;
+        }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #4CAF50; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #ccc; }
+        input[type="range"], select, button { width: 100%; margin-top: 5px; }
+        
+        /* Checkbox styling */
+        .checkbox-group { display: flex; align-items: center; margin-top: 10px; }
+        .checkbox-group input { width: auto; margin: 0 10px 0 0; cursor: pointer; }
+        .checkbox-group label { margin: 0; cursor: pointer; }
+
+        button { background: #4CAF50; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 4px; font-weight: bold; margin-top: 10px; }
+        button:hover { background: #45a049; }
+        select { padding: 5px; background: #333; color: white; border: 1px solid #555; }
+        
+        #coord-readout {
+            position: absolute; bottom: 20px; right: 20px; background: rgba(0, 0, 0, 0.8);
+            padding: 15px; border-radius: 8px; font-family: monospace; font-size: 14px;
+            pointer-events: none; border-left: 4px solid #4CAF50; display: none;
+        }
+        .coord-label { color: #888; }
+        .coord-value { color: #fff; font-weight: bold; margin-left: 10px; }
+        
+        #loading { display: none; color: #ffeb3b; font-size: 0.9rem; margin-top: 10px; }
+        #canvas-container { width: 100vw; height: 100vh; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+</head>
+<body>
+
+    <div id="ui-container">
+        <h2>Terrain Complexity Viewer</h2>
+        
+        <div class="control-group">
+            <label for="file-upload">Upload DEM (.tif):</label>
+            <input type="file" id="file-upload" accept=".tif,.tiff">
+            <div id="loading">Processing... Please wait.</div>
+        </div>
+
+        <div class="control-group">
+            <label for="theme-select">Color Theme:</label>
+            <select id="theme-select">
+                <option value="earth">Earth Topography</option>
+                <option value="jet">Standard Jet (Blue to Red)</option>
+                <option value="grayscale">Grayscale</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="exaggeration">Vertical Exaggeration: <span id="exag-val">1.0x</span></label>
+            <input type="range" id="exaggeration" min="0.1" max="3" step="0.1" value="1">
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="toggle-grid" checked>
+            <label for="toggle-grid">Show 3D Graph / Axes</label>
+        </div>
+
+        <button id="btn-home">⌂ Reset View</button>
+    </div>
+
+    <div id="coord-readout">
+        <div><span class="coord-label">LAT:</span><span class="coord-value" id="val-lat">--.----°</span></div>
+        <div><span class="coord-label">LON:</span><span class="coord-value" id="val-lon">--.----°</span></div>
+        <div><span class="coord-label">ALT:</span><span class="coord-value" id="val-alt">---- m</span></div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        // --- 1. Three.js Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const initialCameraPos = new THREE.Vector3(0, 40, 60);
+        camera.position.copy(initialCameraPos);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 0, 0);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 100, 50);
+        scene.add(directionalLight);
+
+        const PLANE_SIZE = 60; 
+
+        // --- NEW: 3D Grid and Axes Setup ---
+        // 1. The "Graph Sheet" floor
+        const gridDivisions = 20; // How many squares in the grid
+        const gridHelper = new THREE.GridHelper(PLANE_SIZE, gridDivisions, 0x888888, 0x444444);
+        gridHelper.position.y = -5; // Place it at the exact mathematical bottom of the terrain
+        scene.add(gridHelper);
+
+        // 2. The 3D Axes (Red=X, Green=Y, Blue=Z)
+        const axesHelper = new THREE.AxesHelper(PLANE_SIZE / 2 + 5);
+        // Position it at the bottom-left-back corner of our 60x60 grid
+        axesHelper.position.set(-PLANE_SIZE / 2, -5, -PLANE_SIZE / 2);
+        scene.add(axesHelper);
+
+        // Global variables 
+        let terrainMesh = null;
+        let globalElevationData = null;
+        let globalBBox = null;
+        let minEl = Infinity, maxEl = -Infinity;
+
+        // --- 2. Raycaster Setup for Coordinates ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const readoutUI = document.getElementById('coord-readout');
+        const latUI = document.getElementById('val-lat');
+        const lonUI = document.getElementById('val-lon');
+        const altUI = document.getElementById('val-alt');
+
+        window.addEventListener('mousemove', (event) => {
+            if (!terrainMesh) return;
+            
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(terrainMesh);
+
+            if (intersects.length > 0) {
+                readoutUI.style.display = 'block';
+                const point = intersects[0].point;
+                
+                const currentExaggeration = parseFloat(document.getElementById('exaggeration').value);
+                const normalizedY = (point.y + 5) / currentExaggeration; 
+                const realElevation = minEl + (normalizedY / 15) * (maxEl - minEl);
+                
+                altUI.innerText = Math.round(realElevation) + ' m';
+
+                if (globalBBox) {
+                    const u = (point.x + PLANE_SIZE/2) / PLANE_SIZE;
+                    const v = (point.z + PLANE_SIZE/2) / PLANE_SIZE;
+                    const minLon = globalBBox[0], minLat = globalBBox[1], maxLon = globalBBox[2], maxLat = globalBBox[3];
+                    const lon = minLon + u * (maxLon - minLon);
+                    const lat = maxLat - v * (maxLat - minLat); 
+                    
+                    latUI.innerText = lat.toFixed(5) + '°';
+                    lonUI.innerText = lon.toFixed(5) + '°';
+                }
+            } else {
+                readoutUI.style.display = 'none';
+            }
+        });
+
+        // --- 3. Handle File Upload ---
+        document.getElementById('file-upload').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loading').style.display = 'block';
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+                const image = await tiff.getImage();
+                
+                try { globalBBox = image.getBoundingBox(); } catch(e) { globalBBox = null; }
+
+                const rasters = await image.readRasters();
+                globalElevationData = rasters[0];
+                generateTerrain(globalElevationData, image.getWidth(), image.getHeight());
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error processing the TIFF file.");
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        });
+
+        // --- 4. Generate Terrain & Colors ---
+        function generateTerrain(elevationData, width, height) {
+            if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); terrainMesh.material.dispose(); }
+
+            const maxSegments = 512;
+            const stepX = Math.ceil(width / maxSegments);
+            const stepY = Math.ceil(height / maxSegments);
+            const resX = Math.floor(width / stepX);
+            const resY = Math.floor(height / stepY);
+
+            const geometry = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, resX - 1, resY - 1);
+            geometry.rotateX(-Math.PI / 2);
+
+            const vertices = geometry.attributes.position.array;
+            
+            minEl = Infinity; maxEl = -Infinity;
+            for (let i = 0; i < elevationData.length; i++) {
+                const el = elevationData[i];
+                if (el > -10000 && el < 10000) {
+                    if (el < minEl) minEl = el;
+                    if (el > maxEl) maxEl = el;
+                }
+            }
+
+            let vIndex = 0;
+            for (let y = 0; y < resY; y++) {
+                for (let x = 0; x < resX; x++) {
+                    const dataIndex = (y * stepY) * width + (x * stepX);
+                    let el = elevationData[dataIndex];
+                    if (el < -10000) el = minEl;
+                    
+                    const normalizedEl = ((el - minEl) / (maxEl - minEl)) * 15;
+                    vertices[vIndex * 3 + 1] = normalizedEl;
+                    vIndex++;
+                }
+            }
+
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+
+            terrainMesh = new THREE.Mesh(geometry, material);
+            terrainMesh.position.set(0, -5, 0); 
+            scene.add(terrainMesh);
+            
+            updateTheme();
+            
+            document.getElementById('exaggeration').value = 1;
+            document.getElementById('exag-val').innerText = '1.0x';
+        }
+
+        // --- 5. Color Themes Logic ---
+        function getJetColor(t) {
+            let r = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 3)));
+            let g = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 2)));
+            let b = Math.max(0, Math.min(1, 1.5 - Math.abs(t * 4 - 1)));
+            return new THREE.Color(r, g, b);
+        }
+
+        function getEarthColor(t) {
+            if (t < 0.2) return new THREE.Color(0x2d6a4f).lerp(new THREE.Color(0x52b788), t/0.2); 
+            if (t < 0.6) return new THREE.Color(0x52b788).lerp(new THREE.Color(0x9c6644), (t-0.2)/0.4); 
+            if (t < 0.8) return new THREE.Color(0x9c6644).lerp(new THREE.Color(0xddb892), (t-0.6)/0.2); 
+            return new THREE.Color(0xddb892).lerp(new THREE.Color(0xffffff), (t-0.8)/0.2); 
+        }
+
+        function updateTheme() {
+            if (!terrainMesh) return;
+            const theme = document.getElementById('theme-select').value;
+            const geometry = terrainMesh.geometry;
+            const vertices = geometry.attributes.position.array;
+            
+            const colors = [];
+            for (let i = 0; i < vertices.length; i += 3) {
+                const heightRatio = vertices[i + 1] / 15; 
+                let color;
+                if (theme === 'jet') color = getJetColor(heightRatio);
+                else if (theme === 'earth') color = getEarthColor(heightRatio);
+                else color = new THREE.Color().setHSL(0, 0, heightRatio);
+                colors.push(color.r, color.g, color.b);
+            }
+
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.attributes.color.needsUpdate = true;
+        }
+
+        document.getElementById('theme-select').addEventListener('change', updateTheme);
+
+        // --- 6. UI Controls ---
+        document.getElementById('exaggeration').addEventListener('input', (event) => {
+            const scale = parseFloat(event.target.value);
+            document.getElementById('exag-val').innerText = scale.toFixed(1) + 'x';
+            if (terrainMesh) {
+                terrainMesh.scale.y = scale; 
+                // Optionally scale the Y axis of the helper to match the exaggeration
+                axesHelper.scale.y = scale; 
+            }
+        });
+
+        // NEW: Toggle Grid visibility
+        document.getElementById('toggle-grid').addEventListener('change', (event) => {
+            const isVisible = event.target.checked;
+            gridHelper.visible = isVisible;
+            axesHelper.visible = isVisible;
+        });
+
+        document.getElementById('btn-home').addEventListener('click', () => {
+            camera.position.copy(initialCameraPos);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            if(terrainMesh){
+                document.getElementById('exaggeration').value = 1;
+                document.getElementById('exag-val').innerText = '1.0x';
+                terrainMesh.scale.y = 1;
+                axesHelper.scale.y = 1;
+            }
+        });
+
+        // --- 7. Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

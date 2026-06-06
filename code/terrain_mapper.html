@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Web Mapping Studio</title>
+    
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        /* Modern, clean UI styling matching your requirements */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            color: #0f172a;
+        }
+        .header {
+            background-color: #1e293b;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .header h1 { margin: 0; font-size: 28px; }
+        .header p { margin: 5px 0 0 0; opacity: 0.8; }
+        
+        .container { display: flex; gap: 20px; flex-wrap: wrap; }
+        
+        .sidebar {
+            flex: 1;
+            min-width: 320px;
+            max-width: 400px;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            height: fit-content;
+        }
+        .main-view {
+            flex: 3;
+            min-width: 600px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 10px;
+            position: relative;
+        }
+        
+        h3 { margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
+        
+        /* Form Controls */
+        select, input[type="number"], input[type="file"] {
+            width: 100%; padding: 10px; margin-bottom: 20px;
+            border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box;
+        }
+        .range-container { display: flex; align-items: center; gap: 10px; margin-bottom: 20px;}
+        input[type="range"] { flex: 1; }
+        #slider-val { font-weight: bold; min-width: 40px; }
+
+        .flex-row { display: flex; gap: 15px; }
+        .flex-row > div { flex: 1; }
+
+        button {
+            width: 100%; background-color: #2563eb; color: white; border: none;
+            padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            font-size: 14px; transition: background 0.2s;
+        }
+        button:hover { background-color: #1d4ed8; }
+        
+        .alert {
+            padding: 15px; border-radius: 6px; margin-top: 15px; font-weight: 500; display: none;
+        }
+        .alert.success { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; display: block;}
+        .alert.warning { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; display: block;}
+        .alert.error { background-color: #fee2e2; color: #991b1b; border: 1px solid #f87171; display: block;}
+
+        #plot-div { width: 100%; height: 750px; }
+        
+        /* Loading Overlay */
+        #loading-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.9); display: none;
+            justify-content: center; align-items: center; flex-direction: column;
+            border-radius: 8px; z-index: 10;
+        }
+        .spinner {
+            border: 6px solid #f3f3f3; border-top: 6px solid #2563eb;
+            border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>3D Terrain Web Mapping Studio</h1>
+        <p>Client-side DEM Model Extraction and Interactive Spatial Engine</p>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <h3>1. Upload Data</h3>
+            <label>Select CSV File (X, Y, Elevation)</label>
+            <input type="file" id="csv-upload" accept=".csv">
+            <div id="upload-status" class="alert"></div>
+
+            <h3 style="margin-top: 20px;">2. View Controls</h3>
+            <label>Terrain Color Theme:</label>
+            <select id="color-theme">
+                <option value="Jet">Standard Jet (Blue to Red)</option>
+                <option value="Viridis">Viridis Eco (Purple to Yellow)</option>
+                <option value="Earth">Earth Topography</option>
+                <option value="Hot">Hot Thermal</option>
+            </select>
+
+            <label>Vertical Axis Exaggeration (<span id="slider-val">0.2</span>x):</label>
+            <div class="range-container">
+                <input type="range" id="z-scale" min="0" max="3" step="0.1" value="0.2">
+            </div>
+
+            <h3 style="margin-top: 20px;">3. Target Query</h3>
+            <div class="flex-row">
+                <div>
+                    <label>Target X:</label>
+                    <input type="number" id="target-x" placeholder="X Value">
+                </div>
+                <div>
+                    <label>Target Y:</label>
+                    <input type="number" id="target-y" placeholder="Y Value">
+                </div>
+            </div>
+            <button id="pin-btn">Pin Location Vector</button>
+            <div id="pin-status" class="alert"></div>
+        </div>
+
+        <div class="main-view">
+            <div id="loading-overlay">
+                <div class="spinner"></div>
+                <h3 style="margin-top: 20px; border:none; color: #1e293b;">Processing & Rendering Terrain...</h3>
+            </div>
+            <div id="plot-div"></div>
+        </div>
+    </div>
+
+    <script>
+        // Global State Memory
+        let terrainData = { x: [], y: [], z: [], rawZ: [] };
+        let pinPoint = null;
+
+        // UI Elements
+        const uploadInput = document.getElementById('csv-upload');
+        const colorSelect = document.getElementById('color-theme');
+        const scaleSlider = document.getElementById('z-scale');
+        const scaleLabel = document.getElementById('slider-val');
+        const btnPin = document.getElementById('pin-btn');
+        const plotDiv = document.getElementById('plot-div');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const statusBox = document.getElementById('upload-status');
+        const pinStatusBox = document.getElementById('pin-status');
+
+        // Initialize Empty Plot
+        Plotly.newPlot(plotDiv, [], {
+            scene: { xaxis: { visible: false }, yaxis: { visible: false }, zaxis: { visible: false } },
+            annotations: [{ text: "Upload a CSV file to generate terrain.", showarrow: false, font: { size: 20, color: 'gray' } }]
+        });
+
+        // 1. FILE UPLOAD & PARSING
+        uploadInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            loadingOverlay.style.display = 'flex';
+            statusBox.className = 'alert';
+            
+            // Use PapaParse to process CSV fast
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processCSVData(results.data, file.name);
+                },
+                error: function(err) {
+                    showStatus("Error reading CSV file.", "error");
+                    loadingOverlay.style.display = 'none';
+                }
+            });
+        });
+
+        function processCSVData(data, filename) {
+            if (data.length === 0) {
+                showStatus("File is empty.", "error");
+                loadingOverlay.style.display = 'none';
+                return;
+            }
+
+            // Dynamically detect column names
+            const headers = Object.keys(data[0]).map(h => h.trim().toLowerCase());
+            const xKey = Object.keys(data[0])[headers.findIndex(h => ['x', 'easting', 'longitude', 'lon'].includes(h))];
+            const yKey = Object.keys(data[0])[headers.findIndex(h => ['y', 'northing', 'latitude', 'lat'].includes(h))];
+            const zKey = Object.keys(data[0])[headers.findIndex(h => h.includes('elevation') || ['z', 'height', 'alt'].includes(h))];
+
+            if (!xKey || !yKey || !zKey) {
+                showStatus("Could not find X, Y, and Elevation columns. Check headers.", "error");
+                loadingOverlay.style.display = 'none';
+                return;
+            }
+
+            // Extract Data
+            terrainData.x = [];
+            terrainData.y = [];
+            terrainData.rawZ = [];
+            
+            data.forEach(row => {
+                if (row[xKey] != null && row[yKey] != null && row[zKey] != null) {
+                    terrainData.x.push(row[xKey]);
+                    terrainData.y.push(row[yKey]);
+                    terrainData.rawZ.push(row[zKey]);
+                }
+            });
+
+            showStatus(`✅ Successfully loaded: ${filename} (${terrainData.x.length} points)`, "success");
+            pinPoint = null; // Clear old pins
+            pinStatusBox.className = 'alert'; // Clear pin alerts
+            
+            // Allow a small timeout so the UI updates before the heavy WebGL rendering blocks the thread
+            setTimeout(renderTerrain, 100); 
+        }
+
+        function showStatus(msg, type) {
+            statusBox.innerHTML = msg;
+            statusBox.className = `alert ${type}`;
+        }
+
+        // 2. RENDERING LOGIC
+        function renderTerrain() {
+            const zScale = parseFloat(scaleSlider.value);
+            const colorScale = colorSelect.value;
+            
+            // Scale the Z values
+            terrainData.z = terrainData.rawZ.map(val => val * zScale);
+
+            // Create Mesh Trace (Client-side triangulation handles unstructured data perfectly!)
+            const surfaceTrace = {
+                type: 'mesh3d',
+                x: terrainData.x,
+                y: terrainData.y,
+                z: terrainData.z,
+                intensity: terrainData.rawZ, // Base colors on REAL elevation, not scaled
+                colorscale: colorScale,
+                colorbar: { title: 'Elevation (m)', thickness: 20 },
+                delaunayaxis: 'z', // Tells Plotly to treat this as a top-down terrain surface
+                hoverinfo: 'x+y+z',
+                lighting: { ambient: 0.6, roughness: 0.5, diffuse: 0.8 }
+            };
+
+            const traces = [surfaceTrace];
+
+            // Add Pin Marker if it exists
+            if (pinPoint) {
+                traces.push({
+                    type: 'scatter3d',
+                    mode: 'markers+text',
+                    x: [pinPoint.x],
+                    y: [pinPoint.y],
+                    z: [pinPoint.z * zScale], // Scale the pin height to match terrain
+                    marker: { size: 6, color: 'black', symbol: 'diamond', line: { color: 'white', width: 2 } },
+                    text: [`📍 Elev: ${pinPoint.z.toFixed(2)}m`],
+                    textposition: 'top center',
+                    textfont: { color: 'black', size: 12, family: 'Arial Black' },
+                    name: 'Target'
+                });
+            }
+
+            // Extract existing layout to preserve Camera State!
+            let currentLayout = plotDiv.layout || {};
+            
+            // Define or update layout
+            const layout = {
+                margin: { l: 0, r: 0, b: 0, t: 30 },
+                scene: {
+                    xaxis: { title: 'X Coordinate' },
+                    yaxis: { title: 'Y Coordinate' },
+                    zaxis: { title: 'Scaled Elevation' },
+                    aspectmode: 'data',
+                    // Keep existing camera if it exists, otherwise default
+                    camera: currentLayout.scene?.camera || { eye: { x: 1.5, y: 1.5, z: 1.2 } }
+                },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                showlegend: false
+            };
+
+            // Plotly.react is efficient and preserves the camera state inherently
+            Plotly.react(plotDiv, traces, layout).then(() => {
+                loadingOverlay.style.display = 'none';
+            });
+        }
+
+        // 3. UI EVENT LISTENERS
+        
+        // Z-Scale Slider update
+        scaleSlider.addEventListener('input', function(e) {
+            scaleLabel.innerText = parseFloat(e.target.value).toFixed(1);
+        });
+        
+        // Render triggers (Slider drag end, Dropdown change)
+        scaleSlider.addEventListener('change', function() { if(terrainData.x.length > 0) renderTerrain(); });
+        colorSelect.addEventListener('change', function() { if(terrainData.x.length > 0) renderTerrain(); });
+
+        // Pin Location Logic
+        btnPin.addEventListener('click', function() {
+            if (terrainData.x.length === 0) return;
+
+            const targetX = parseFloat(document.getElementById('target-x').value);
+            const targetY = parseFloat(document.getElementById('target-y').value);
+
+            if (isNaN(targetX) || isNaN(targetY)) {
+                pinStatusBox.innerHTML = "Please enter valid numerical coordinates.";
+                pinStatusBox.className = "alert error";
+                return;
+            }
+
+            // Find the nearest point in the raw dataset using Pythagorean theorem
+            let nearestIdx = -1;
+            let minDistance = Infinity;
+
+            for (let i = 0; i < terrainData.x.length; i++) {
+                const dx = terrainData.x[i] - targetX;
+                const dy = terrainData.y[i] - targetY;
+                const dist = dx*dx + dy*dy; // No need for Math.sqrt, just comparing relative squares is faster
+                
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    nearestIdx = i;
+                }
+            }
+
+            // Set the global pinPoint
+            pinPoint = {
+                x: terrainData.x[nearestIdx],
+                y: terrainData.y[nearestIdx],
+                z: terrainData.rawZ[nearestIdx] // Store the true elevation
+            };
+
+            // Calculate actual distance to see if it was an exact match or fallback
+            const actualDist = Math.sqrt(minDistance);
+            
+            if (actualDist > 1.0) { // If target is far from the nearest node
+                pinStatusBox.innerHTML = `⚠️ Exact match not found. Nearest coordinate located at:<br>X: ${pinPoint.x.toFixed(1)}, Y: ${pinPoint.y.toFixed(1)}<br>Elevation: <b>${pinPoint.z.toFixed(2)}m</b>`;
+                pinStatusBox.className = "alert warning";
+            } else {
+                pinStatusBox.innerHTML = `✅ Coordinates Mapped!<br>Elevation: <b>${pinPoint.z.toFixed(2)}m</b>`;
+                pinStatusBox.className = "alert success";
+            }
+
+            renderTerrain(); // Redraw with the new pin
+        });
+    </script>
+</body>
+</html>
