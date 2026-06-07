@@ -321,7 +321,7 @@ export const TerrainVisualizer = {
         if (targetCameraPos) { camera.position.lerp(targetCameraPos, 0.08); if (camera.position.distanceTo(targetCameraPos) < 0.1) targetCameraPos = null; }
         if (drone && animationPath.length > 0 && animIndex < animationPath.length - 1) {
             const cPos = animationPath[Math.floor(animIndex)], nPos = animationPath[Math.floor(animIndex) + 1];
-            drone.position.lerpVectors(cPos, nPos, animIndex % 1); drone.lookAt(nPos); animIndex += 0.05;
+            drone.position.lerpVectors(cPos, nPos, animIndex % 1); drone.lookAt(nPos); animIndex += 0.15;
         }
         if(axisLabelsGroup) axisLabelsGroup.children.forEach(l => l.quaternion.copy(camera.quaternion));
         controls.update();
