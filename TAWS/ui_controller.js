@@ -1,7 +1,7 @@
 import { TerrainProcessor } from './terrain_processor.js';
 import { TerrainVisualizer } from './visualizer.js';
 import { UASPathfinder } from './pathfinder.js';
-import { HeatmapVisualizer } from './heatmap_visualizer.js'; // Import the new module
+import { HeatmapVisualizer } from './heatmap_visualizer.js'; 
 
 export const CONFIG = { GRID_RES: 128, PLANE_SIZE: 100 };
 export const DATA = {
@@ -25,7 +25,7 @@ document.getElementById('nav-3d').addEventListener('click', (e) => {
 
 document.getElementById('nav-2d').addEventListener('click', (e) => {
     document.getElementById('view-3d').style.display = 'none';
-    document.getElementById('view-2d').style.display = 'flex'; // Uses flex for split layout
+    document.getElementById('view-2d').style.display = 'flex';
     e.target.classList.add('active');
     document.getElementById('nav-3d').classList.remove('active');
 });
@@ -50,14 +50,12 @@ document.getElementById('file-upload').addEventListener('change', async (e) => {
         TerrainVisualizer.renderTerrain();
         TerrainVisualizer.drawAxisNumbers();
         
-        // Draw the baseline 2D Heatmap instantly (without path)
         HeatmapVisualizer.drawBaseHeatmap(DATA.tciScores);
         
         const startBtn = document.getElementById('btn-start');
         startBtn.removeAttribute('disabled'); startBtn.disabled = false;
-
-        syncLiveMarkers();
         
+        syncLiveMarkers(); 
         logStatus("Terrain Loaded. Ready for Pathfinding Routing.");
     } catch (err) {
         logStatus("Error reading TIFF: " + err.message, "error");
@@ -71,33 +69,54 @@ document.getElementById('btn-start').addEventListener('click', () => {
         sz: parseInt(document.getElementById('start-z').value),
         ex: parseInt(document.getElementById('end-x').value),
         ez: parseInt(document.getElementById('end-z').value),
-        maxH: parseFloat(document.getElementById('max-height').value)
+        maxH: parseFloat(document.getElementById('max-height').value),
+        maxRisk: parseFloat(document.getElementById('max-risk').value)
     };
 
-    logStatus("Calculating Shortest Corridor Path...");
+    logStatus(`Calculating Path (Max Elev: ${params.maxH}m, Max TTCI: ${params.maxRisk})...`);
     TerrainVisualizer.drawStraightLine(params.sx, params.sz, params.ex, params.ez);
 
     setTimeout(() => {
         const startTime = performance.now();
-        const path = UASPathfinder.run(params.sx, params.sz, params.ex, params.ez, params.maxH);
+        // The pathfinder now returns an object instead of a flat array
+        const result = UASPathfinder.run(params.sx, params.sz, params.ex, params.ez, params.maxH, params.maxRisk);
         const calcTime = performance.now() - startTime;
 
-        if (path) {
+        if (result && result.path) {
+            // SUCCESS SCENARIO
+            const path = result.path;
             logStatus("Optimal Safe Corridor Found. Launching Drone...", "normal");
-            
-            // 1. Update 3D Viewer
             TerrainVisualizer.drawPath(path);
             TerrainVisualizer.spawnDrone(path);
             
-            // 2. Update 2D Math Analytics
             HeatmapVisualizer.drawPathOnHeatmap(path);
             HeatmapVisualizer.generateMathReport(path, calcTime);
-
         } else {
-            logStatus(`CRITICAL: Destination Unreachable under ${params.maxH}m.`, "error");
-            document.getElementById('math-output').innerHTML = `\n[!] FATAL: No valid path exists.\nTerrain geometry physically blocks all routes below ${params.maxH}m.`;
+            // FAILURE SCENARIO: Print the exact diagnostic error to the UI
+            logStatus(`CRITICAL: ${result.error}.`, "error");
+            document.getElementById('math-output').innerHTML = `\n[!] FATAL: DESTINATION UNREACHABLE\n\nCONSTRAINT TRIGGERED: ${result.error}\n-> ${result.detail}\n\nPlease adjust your Flight Ceiling or Max Acceptable Risk limits and run again.`;
         }
     }, 100);
+});
+
+// --- 5. Live Preview Logic ---
+function syncLiveMarkers() {
+    if (DATA.terrainHeights[0] === 0) return;
+
+    const sx = parseInt(document.getElementById('start-x').value);
+    const sz = parseInt(document.getElementById('start-z').value);
+    const ex = parseInt(document.getElementById('end-x').value);
+    const ez = parseInt(document.getElementById('end-z').value);
+    const maxH = parseFloat(document.getElementById('max-height').value);
+
+    TerrainVisualizer.updateLiveMarkers(sx, sz, ex, ez);
+    TerrainVisualizer.updateMaxHeightCeiling(maxH);
+    HeatmapVisualizer.updateLivePreview(sx, sz, ex, ez, DATA.tciScores);
+}
+
+// Attach the listener to all remaining numerical inputs
+['start-x', 'start-z', 'end-x', 'end-z', 'max-height', 'max-risk'].forEach(id => {
+    document.getElementById(id).addEventListener('input', syncLiveMarkers);
 });
 
 // --- UI Syncing ---
@@ -106,28 +125,4 @@ document.getElementById('terrain-opacity').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('opacity-val').innerText = val.toFixed(2);
     TerrainVisualizer.updateOpacity(val);
-});
-
-// --- 5. Live Coordinate Preview Logic ---
-// --- 5. Live Preview Logic ---
-function syncLiveMarkers() {
-    if (DATA.terrainHeights[0] === 0) return; // Prevent errors before upload
-
-    const sx = parseInt(document.getElementById('start-x').value);
-    const sz = parseInt(document.getElementById('start-z').value);
-    const ex = parseInt(document.getElementById('end-x').value);
-    const ez = parseInt(document.getElementById('end-z').value);
-    const maxH = parseFloat(document.getElementById('max-height').value); // Fetch max height
-
-    // Update 3D markers and ceiling instantly
-    TerrainVisualizer.updateLiveMarkers(sx, sz, ex, ez);
-    TerrainVisualizer.updateMaxHeightCeiling(maxH);
-    
-    // Update 2D Heatmap instantly
-    HeatmapVisualizer.updateLivePreview(sx, sz, ex, ez, DATA.tciScores);
-}
-
-// Attach the listener to ALL FIVE numerical inputs (added max-height)
-['start-x', 'start-z', 'end-x', 'end-z', 'max-height'].forEach(id => {
-    document.getElementById(id).addEventListener('input', syncLiveMarkers);
 });

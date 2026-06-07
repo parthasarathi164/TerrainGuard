@@ -127,6 +127,8 @@ export const HeatmapVisualizer = {
             const risk = DATA.tciScores[idx].toFixed(2);
             
             if (DATA.tciScores[idx] > maxRisk) maxRisk = DATA.tciScores[idx];
+            
+            // REVERTED: Changed back to 1 so the text report matches the UI controller's calculation exactly
             totalCost += (DATA.tciScores[idx] > 80 ? 1000 : (DATA.tciScores[idx] > 50 ? 15 : 1));
 
             if (index % 5 === 0 || index === path.length - 1) {

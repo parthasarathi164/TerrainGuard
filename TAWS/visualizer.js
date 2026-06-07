@@ -1,5 +1,8 @@
 import { CONFIG, DATA } from './ui_controller.js';
 
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let draggingMarker = null; // Will track if we are holding 'start' or 'end'
 let scene, camera, renderer, controls;
 let terrainMesh, pathLine, straightLine, startMarker, endMarker, drone, ceilingMesh;
 let axisLabelsGroup, cubeScene, cubeCamera, cubeMesh;
@@ -23,6 +26,10 @@ export const TerrainVisualizer = {
         renderer.autoClear = false;
         renderer.setSize(window.innerWidth, window.innerHeight);
         container.appendChild(renderer.domElement);
+
+        renderer.domElement.addEventListener('pointerdown', TerrainVisualizer.onPointerDown.bind(TerrainVisualizer));
+        renderer.domElement.addEventListener('pointermove', TerrainVisualizer.onPointerMove.bind(TerrainVisualizer));
+        window.addEventListener('pointerup', TerrainVisualizer.onPointerUp.bind(TerrainVisualizer));
 
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -164,7 +171,9 @@ export const TerrainVisualizer = {
     gridToWorld(gx, gz) {
         const idx = gz * CONFIG.GRID_RES + gx;
         const wy = ((DATA.terrainHeights[idx] - DATA.minEl) / (DATA.maxEl - DATA.minEl)) * 20 - 5;
-        return new THREE.Vector3((gx / (CONFIG.GRID_RES - 1)) * CONFIG.PLANE_SIZE - (CONFIG.PLANE_SIZE / 2), wy + 1.5, (gz / (CONFIG.GRID_RES - 1)) * CONFIG.PLANE_SIZE - (CONFIG.PLANE_SIZE / 2));
+        
+        // REDUCED: Changed visual offset from + 1.5 to + 0.5 for a tighter, realistic flight hover
+        return new THREE.Vector3((gx / (CONFIG.GRID_RES - 1)) * CONFIG.PLANE_SIZE - (CONFIG.PLANE_SIZE / 2), wy + 1.0, (gz / (CONFIG.GRID_RES - 1)) * CONFIG.PLANE_SIZE - (CONFIG.PLANE_SIZE / 2));
     },
 
     updateLiveMarkers(sx, sz, ex, ez) {
@@ -191,6 +200,70 @@ export const TerrainVisualizer = {
         }
         endMarker.position.copy(endPos);
     },
+    
+    onPointerDown(event) {
+        // Prevent crashing if markers haven't spawned yet
+        if (!startMarker || !endMarker) return; 
+
+        // Calculate mouse position in normalized device coordinates (-1 to +1)
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Check if the user clicked exactly on the Start or End sphere
+        const intersects = raycaster.intersectObjects([startMarker, endMarker]);
+        if (intersects.length > 0) {
+            controls.enabled = false; // Lock OrbitControls so the camera stops rotating while dragging
+            draggingMarker = (intersects[0].object === startMarker) ? 'start' : 'end';
+        }
+    },
+
+    onPointerMove(event) {
+        if (!draggingMarker || !terrainMesh) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Raycast against the terrain surface so the marker "sticks" to the mountains
+        const intersects = raycaster.intersectObject(terrainMesh);
+        if (intersects.length > 0) {
+            const point = intersects[0].point;
+
+            // Reverse Math: Convert 3D World Coordinates back to 2D Grid Coordinates (0-127)
+            const gridRatio = CONFIG.PLANE_SIZE / CONFIG.GRID_RES;
+            let gx = Math.round((point.x / gridRatio) + (CONFIG.GRID_RES / 2));
+            let gz = Math.round((point.z / gridRatio) + (CONFIG.GRID_RES / 2));
+
+            // Constrain the points so they cannot be dragged off the edge of the map
+            gx = Math.max(0, Math.min(CONFIG.GRID_RES - 1, gx));
+            gz = Math.max(0, Math.min(CONFIG.GRID_RES - 1, gz));
+
+            // Update UI Input Boxes
+            if (draggingMarker === 'start') {
+                document.getElementById('start-x').value = gx;
+                document.getElementById('start-z').value = gz;
+                // Dispatch a fake "input" event to trigger your existing syncLiveMarkers logic!
+                document.getElementById('start-x').dispatchEvent(new Event('input'));
+            } else {
+                document.getElementById('end-x').value = gx;
+                document.getElementById('end-z').value = gz;
+                // Dispatch a fake "input" event
+                document.getElementById('end-x').dispatchEvent(new Event('input'));
+            }
+        }
+    },
+
+    onPointerUp(event) {
+        if (draggingMarker) {
+            draggingMarker = null; // Let go of the marker
+            controls.enabled = true; // Turn camera rotation back on
+        }
+    },
 
     updateMaxHeightCeiling(maxH) {
         // Remove the old ceiling if it exists
@@ -208,7 +281,7 @@ export const TerrainVisualizer = {
 
         // Make it a highly transparent blue glass material
         const mat = new THREE.MeshBasicMaterial({
-            color: 0x00aaff,      // Bright cyan/blue
+            color: 0xff5500,      // Bright cyan/blue
             transparent: true,
             opacity: 0.25,        // Low opacity so we can see the path underneath
             side: THREE.DoubleSide,
@@ -248,7 +321,7 @@ export const TerrainVisualizer = {
         if (targetCameraPos) { camera.position.lerp(targetCameraPos, 0.08); if (camera.position.distanceTo(targetCameraPos) < 0.1) targetCameraPos = null; }
         if (drone && animationPath.length > 0 && animIndex < animationPath.length - 1) {
             const cPos = animationPath[Math.floor(animIndex)], nPos = animationPath[Math.floor(animIndex) + 1];
-            drone.position.lerpVectors(cPos, nPos, animIndex % 1); drone.lookAt(nPos); animIndex += 0.15;
+            drone.position.lerpVectors(cPos, nPos, animIndex % 1); drone.lookAt(nPos); animIndex += 0.05;
         }
         if(axisLabelsGroup) axisLabelsGroup.children.forEach(l => l.quaternion.copy(camera.quaternion));
         controls.update();
