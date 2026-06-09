@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Himalayan MSA Calculator</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+</head>
+<body>
+    <div id="ui-panel">
+        <h2>MSA Flight Planner</h2>
+        
+        <div class="control-group">
+            <label for="tif-upload">Upload Terrain (.tif):</label>
+            <input type="file" id="tif-upload" accept=".tif, .tiff">
+        </div>
+
+        <div class="control-group">
+            <label for="opacity-slider">Terrain Opacity: <span id="opacity-val">50%</span></label>
+            <input type="range" id="opacity-slider" min="0.1" max="1" step="0.1" value="0.5">
+        </div>
+
+        <hr>
+
+        <div class="control-group">
+    <h3>Waypoints (X, Y, Z)</h3>
+    <div class="waypoint">
+        <label>Start:</label>
+        <input type="number" id="start-x" placeholder="X" value="350">
+        <input type="number" id="start-y" placeholder="Y" value="5000">
+        <input type="number" id="start-z" placeholder="Z" value="50">
+    </div>
+    
+    <div id="checkpoints-container">
+        </div>
+    
+    <button id="add-checkpoint-btn">+ Add Checkpoint</button>
+
+    <div class="waypoint" style="margin-top: 10px;">
+        <label>End:</label>
+        <input type="number" id="end-x" placeholder="X" value="666">
+        <input type="number" id="end-y" placeholder="Y" value="5600">
+        <input type="number" id="end-z" placeholder="Z" value="340">
+    </div>
+</div>
+
+        <button id="run-msa-btn">Run MSA Calculator</button>
+        <p id="status-text">Ready. Please upload a .tif file.</p>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module" src="js/master.js"></script>
+</body>
+</html>

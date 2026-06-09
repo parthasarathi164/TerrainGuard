@@ -1,0 +1,59 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #111;
+}
+
+#canvas-container {
+    width: 100vw;
+    height: 100vh;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+
+#ui-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 320px;
+    background: rgba(30, 30, 30, 0.9);
+    color: white;
+    padding: 20px;
+    border-radius: 8px;
+    z-index: 10;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+h2, h3 { margin-top: 0; color: #4CAF50; }
+hr { border-color: #444; margin: 15px 0; }
+
+.control-group { margin-bottom: 15px; }
+.control-group label { display: block; margin-bottom: 5px; font-size: 0.9em; }
+input[type="file"], input[type="range"] { width: 100%; }
+
+.waypoint { display: flex; gap: 5px; margin-bottom: 5px; align-items: center;}
+.waypoint input { width: 30%; padding: 5px; background: #333; color: white; border: 1px solid #555; }
+.checkpoint-row { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
+.checkpoint-row input { width: 25%; padding: 5px; background: #333; color: white; border: 1px solid #555; }
+
+button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    width: 100%;
+    margin-top: 5px;
+}
+button:hover { background: #45a049; }
+.remove-btn { background: #f44336; width: auto; padding: 5px 10px; }
+.remove-btn:hover { background: #d32f2f; }
+
+#status-text { font-size: 0.85em; color: #aaa; margin-top: 15px; }
