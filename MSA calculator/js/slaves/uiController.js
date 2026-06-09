@@ -31,10 +31,7 @@ export class UIController {
                 const rasters = await image.readRasters(); 
                 
                 callbacks.onTerrainParsed(rasters[0], image.getWidth(), image.getHeight());
-                
-                // Automatically populate your requested default checkpoints on upload load
                 this.loadDefaultCheckpoints();
-                
                 this.bindLiveUpdates(); 
                 
             } catch (err) {
@@ -46,7 +43,6 @@ export class UIController {
         document.getElementById('run-msa-btn').addEventListener('click', callbacks.onRunMSA);
     }
 
-    // Instantiates your screenshot's precise baseline flight plan
     loadDefaultCheckpoints() {
         this.container.innerHTML = "";
         this.checkpointsCount = 0;
@@ -57,10 +53,12 @@ export class UIController {
         // CP2 configuration: (220, 4900, 373)
         this.injectCheckpointRow(220, 4900, 373);
 
+        // CP3 configuration: (350, 5300, 476)
+        this.injectCheckpointRow(350, 5300, 476);
+
         if (this.liveUpdateCallback) this.liveUpdateCallback();
     }
 
-    // Isolated row rendering block
     injectCheckpointRow(x, y, z) {
         this.checkpointsCount++;
         const id = this.checkpointsCount;
@@ -80,11 +78,11 @@ export class UIController {
         window.triggerLiveUpdate = () => { if(this.liveUpdateCallback) this.liveUpdateCallback(); };
     }
 
-    // Logic path for subsequent manual dynamic additions (CP3+)
     addCheckpoint() {
-        const nextX = 220 + (this.checkpointsCount * 50);
-        const nextY = 5000;
-        const nextZ = 373 + (this.checkpointsCount * 50);
+        // Adjusts to scale cleanly from the end of CP3 defaults
+        const nextX = 350 + (this.checkpointsCount * 50);
+        const nextY = 5300;
+        const nextZ = 476 + (this.checkpointsCount * 50);
         
         this.injectCheckpointRow(nextX, nextY, nextZ);
     }

@@ -1,7 +1,8 @@
 export class MSACalculator {
     constructor() {
-        this.safetyBuffer = 600; 
-        this.horizontalBufferPixels = 308; 
+        this.safetyBuffer = 300; 
+        this.horizontalBufferPixels = 40; 
+        this.segmentLength = 40; // The length of each sub-sector chunk
     }
 
     calculateSectors(waypoints, terrainData) {
@@ -11,13 +12,43 @@ export class MSACalculator {
         for (let i = 0; i < waypoints.length - 1; i++) {
             const start = waypoints[i];
             const end = waypoints[i+1];
-            const msa = this.calculateMSAForSector(start, end, terrainData);
             
+            // --- NEW: Subdivide the path into small chunks ---
+            const dx = end.x - start.x;
+            const dz = end.z - start.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            
+            // Determine how many chunks we need to bridge this leg
+            const numSegments = Math.max(1, Math.ceil(distance / this.segmentLength));
+            
+            const subSectors = [];
+            
+            for (let j = 0; j < numSegments; j++) {
+                const t1 = j / numSegments;
+                const t2 = (j + 1) / numSegments;
+                
+                // Interpolate the start and end coordinates of this specific chunk
+                const p1 = {
+                    x: start.x + dx * t1,
+                    y: start.y + (end.y - start.y) * t1, 
+                    z: start.z + dz * t1
+                };
+                const p2 = {
+                    x: start.x + dx * t2,
+                    y: start.y + (end.y - start.y) * t2,
+                    z: start.z + dz * t2
+                };
+                
+                const msa = this.calculateMSAForSector(p1, p2, terrainData);
+                subSectors.push({ start: p1, end: p2, msaAltitude: msa });
+            }
+            // --------------------------------------------------
+
             sectors.push({
                 sectorIndex: i + 1,
                 start: start,
                 end: end,
-                msaAltitude: msa
+                subSectors: subSectors // Attach chunks to main sector
             });
         }
         return sectors;
