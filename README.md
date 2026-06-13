@@ -1,4 +1,5 @@
 # TerrainGuard
-honeywell hackathon - june 2026
+
+hackathon - june 2026
 
 README yet to be updated.
